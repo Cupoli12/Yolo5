@@ -3,82 +3,75 @@ import yolov5
 import streamlit as st
 import numpy as np
 import pandas as pd
-#from ultralytics import YOLO
 
-#import sys
-#sys.path.append('./ultralytics/yolo')
-
-#from utils.checks import check_requirements
-
-
-# load pretrained model
+# Cargar el modelo preentrenado
 model = yolov5.load('yolov5s.pt')
-#model = yolov5.load('yolov5nu.pt')
 
-# set model parameters
-model.conf = 0.25  # NMS confidence threshold
-model.iou = 0.45  # NMS IoU threshold
-model.agnostic = False  # NMS class-agnostic
-model.multi_label = False  # NMS multiple labels per box
-model.max_det = 1000  # maximum number of detections per image
+# Configurar parámetros del modelo
+model.conf = 0.25  # Umbral de confianza NMS
+model.iou = 0.45  # Umbral de IoU NMS
+model.agnostic = False  # NMS de clase agnóstica
+model.multi_label = False  # NMS múltiples etiquetas por cuadro
+model.max_det = 1000  # Número máximo de detecciones por imagen
 
-# take a picture with the camera
+# Título de la aplicación
 st.title("Detección de Objetos en Imágenes")
 
+# Barra lateral para configuración de parámetros
 with st.sidebar:
-            st.subheader('Parámetros de Configuración')
-            model.iou= st.slider('Seleccione el IoU',0.0, 1.0)
-            st.write('IOU:', model.iou)
+    st.header("Configuración del Modelo")
+    model.iou = st.slider('Umbral de IoU', 0.0, 1.0, model.iou, 0.01)
+    model.conf = st.slider('Nivel de Confianza', 0.0, 1.0, model.conf, 0.01)
+    st.info("Ajusta los parámetros para mejorar la detección de objetos.")
 
-with st.sidebar:
-            model.conf = st.slider('Seleccione el Confidence',0.0, 1.0)
-            st.write('Conf:', model.conf)
+# Capturar una imagen con la cámara
+st.subheader("Captura de Imagen")
+picture = st.camera_input("Haz clic para capturar una foto", label_visibility='visible')
 
-
-picture = st.camera_input("Capturar foto",label_visibility='visible' )
-
+# Procesar la imagen si se ha capturado una
 if picture:
-    #st.image(picture)
+    st.success("¡Imagen capturada exitosamente!")
 
+    # Convertir la imagen de bytes a formato OpenCV
     bytes_data = picture.getvalue()
     cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
-  
-    # perform inference
-    results = model(cv2_img)
 
-    # parse results
-    predictions = results.pred[0]
-    boxes = predictions[:, :4] 
-    scores = predictions[:, 4]
-    categories = predictions[:, 5]
+    # Realizar la inferencia
+    with st.spinner("Detectando objetos..."):
+        results = model(cv2_img)
 
-    col1, col2 = st.columns(2)
+    # Mostrar los resultados
+    st.subheader("Resultados de la Detección")
+    col1, col2 = st.columns([2, 1])
 
     with col1:
-        # show detection bounding boxes on image
+        # Mostrar la imagen con las cajas de detección
         results.render()
-        # show image with detections 
-        st.image(cv2_img, channels = 'BGR')
+        st.image(cv2_img, channels='BGR', caption="Imagen con Detecciones")
 
-    with col2:      
+    with col2:
+        st.subheader("Resumen de Detecciones")
 
-        # get label names
+        # Obtener etiquetas y contar categorías detectadas
         label_names = model.names
-        # count categories
         category_count = {}
-        for category in categories:
-            if category in category_count:
-                category_count[category] += 1
-            else:
-                category_count[category] = 1        
+        categories = results.pred[0][:, 5]
 
-        data = []        
-        # print category counts and labels
-        for category, count in category_count.items():
-            label = label_names[int(category)]            
-            data.append({"Categoría":label,"Cantidad":count})
-        data2 =pd.DataFrame(data)
-        
-        # agrupar los datos por la columna "categoria" y sumar las cantidades
-        df_sum = data2.groupby('Categoría')['Cantidad'].sum().reset_index() 
-        df_sum
+        for category in categories:
+            category_name = label_names[int(category)]
+            category_count[category_name] = category_count.get(category_name, 0) + 1
+
+        # Crear un DataFrame con los resultados
+        detections_df = pd.DataFrame(
+            [{"Categoría": cat, "Cantidad": count} for cat, count in category_count.items()]
+        )
+
+        # Mostrar la tabla con los resultados
+        st.table(detections_df.style.format(precision=0).background_gradient(cmap="YlGn"))
+
+        st.markdown(
+            f"### Total de objetos detectados: {detections_df['Cantidad'].sum()}",
+            unsafe_allow_html=True
+        )
+
+    st.success("Detección completada.")
